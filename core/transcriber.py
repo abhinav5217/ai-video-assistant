@@ -1,5 +1,6 @@
 import os
 import time
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -8,8 +9,10 @@ load_dotenv()
 
 def get_api_key():
     """
-    API key ko pehle Streamlit Secrets se,
-    phir .env / environment variable se read karega.
+    API key ko:
+    1. Streamlit Secrets se
+    2. Environment variable / .env se
+    read karega.
     """
 
     # Streamlit Cloud Secrets
@@ -23,11 +26,10 @@ def get_api_key():
         pass
 
     # Local .env / environment variable
-    api_key = os.getenv("OPENAI_API_KEY")
-
-    return api_key
+    return os.getenv("OPENAI_API_KEY")
 
 
+# Get API key
 api_key = get_api_key()
 
 if not api_key:
@@ -37,6 +39,7 @@ if not api_key:
     )
 
 
+# OpenAI client
 client = OpenAI(api_key=api_key)
 
 
@@ -46,6 +49,15 @@ def transcribe_chunk(
     translate: bool = False,
     retries: int = 3
 ) -> str:
+    """
+    Ek audio chunk ko OpenAI Whisper se transcribe karta hai.
+
+    Parameters:
+        chunk_path: audio file ka path
+        language: language code, example 'en' / 'hi'
+        translate: True hone par audio ko English me translate karega
+        retries: temporary failure ke liye retry count
+    """
 
     for attempt in range(1, retries + 1):
 
@@ -58,6 +70,7 @@ def transcribe_chunk(
 
             with open(chunk_path, "rb") as audio_file:
 
+                # Translation
                 if translate:
 
                     response = client.audio.translations.create(
@@ -65,6 +78,7 @@ def transcribe_chunk(
                         file=audio_file
                     )
 
+                # Transcription
                 else:
 
                     if language:
@@ -86,11 +100,29 @@ def transcribe_chunk(
 
         except Exception as e:
 
+            error_message = str(e)
+
             print(
                 f"  Transcription error: "
-                f"{type(e).__name__}: {e}"
+                f"{type(e).__name__}: {error_message}"
             )
 
+            # 413 = file too large
+            # Is error ko retry karne ka koi benefit nahi hai.
+            if (
+                "413" in error_message
+                or "Maximum content size limit" in error_message
+                or "Request Entity Too Large" in error_message
+            ):
+
+                print(
+                    "  Audio file is too large. "
+                    "Not retrying this chunk."
+                )
+
+                raise
+
+            # Retry temporary errors
             if attempt < retries:
 
                 wait_time = attempt * 3
@@ -111,8 +143,15 @@ def transcribe_all(
     language: str = None,
     translate: bool = False
 ) -> str:
+    """
+    Saare audio chunks ko transcribe karta hai
+    aur ek complete transcript return karta hai.
+    """
 
     full_transcript = []
+
+    if not chunks:
+        return ""
 
     for i, chunk in enumerate(chunks):
 
