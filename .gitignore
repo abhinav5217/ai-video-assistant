@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# Audio / video downloads
+downloads/
+*.mp3
+*.mp4
+*.wav
+*.m4a
+*.webm
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store

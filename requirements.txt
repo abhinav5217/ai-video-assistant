@@ -1,0 +1,41 @@
+# ── AI Meeting Assistant ─────────────────────────────────────
+
+# ── Audio / Video ─────────────────────────────────────────────
+yt-dlp>=2024.4.9
+pydub>=0.25.1
+ffmpeg-python>=0.2.0
+
+# ── OpenAI ────────────────────────────────────────────────────
+openai>=1.0.0
+
+# ── LLM / RAG ────────────────────────────────────────────────
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+
+# If you want Mistral as an alternative LLM
+# langchain-mistralai>=0.1.0
+# mistralai>=0.4.0
+
+# ── RAG / Vector Database ────────────────────────────────────
+chromadb>=0.5.0
+sentence-transformers>=3.0.0
+langchain-huggingface>=0.0.3
+huggingface-hub>=0.23.0
+tiktoken>=0.7.0
+
+# ── Streamlit ────────────────────────────────────────────────
+streamlit>=1.35.0
+streamlit-extras>=0.4.0
+watchdog>=4.0.0
+
+# ── PDF / TXT ────────────────────────────────────────────────
+reportlab>=4.2.0
+fpdf2>=2.7.9
+
+# ── Utilities ────────────────────────────────────────────────
+python-dotenv>=1.0.0
+numpy>=1.26.0
+tqdm>=4.66.0
+requests>=2.32.0
+langchain-chroma>=0.1.0
