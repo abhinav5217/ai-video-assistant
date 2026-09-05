@@ -1,7 +1,7 @@
-import streamlit as st
-import tempfile
 import os
+import tempfile
 
+import streamlit as st
 from dotenv import load_dotenv
 
 from utils.audio_processor import process_input
@@ -30,19 +30,49 @@ st.set_page_config(
 
 
 # ============================================================
+# CONFIG / SECRETS HELPER
+# ============================================================
+
+def get_secret(key: str):
+    """
+    Secret ko:
+    1. Streamlit Secrets
+    2. Environment variable / .env
+
+    se read karta hai.
+    """
+
+    # Streamlit Cloud
+    try:
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+
+    # Local .env / environment
+    return os.getenv(key)
+
+
+# ============================================================
 # LOGIN CONFIG
 # ============================================================
 
-APP_USERNAME = os.getenv("APP_USERNAME")
-APP_PASSWORD = os.getenv("APP_PASSWORD")
+APP_USERNAME = get_secret("APP_USERNAME")
+APP_PASSWORD = get_secret("APP_PASSWORD")
 
 
-# Make sure credentials exist
+# ============================================================
+# CHECK LOGIN CREDENTIALS
+# ============================================================
+
 if not APP_USERNAME or not APP_PASSWORD:
+
     st.error(
-        "⚠️ Login credentials are not configured. "
-        "Please add APP_USERNAME and APP_PASSWORD to your .env file."
+        "⚠️ Login credentials are not configured.\n\n"
+        "Please add APP_USERNAME and APP_PASSWORD "
+        "to Streamlit Secrets or your .env file."
     )
+
     st.stop()
 
 
@@ -83,16 +113,20 @@ if not st.session_state.authenticated:
 
     if login_button:
 
-        if username == APP_USERNAME and password == APP_PASSWORD:
+        if (
+            username == APP_USERNAME
+            and password == APP_PASSWORD
+        ):
 
             st.session_state.authenticated = True
 
-            # Refresh page after successful login
             st.rerun()
 
         else:
 
-            st.error("❌ Invalid username or password.")
+            st.error(
+                "❌ Invalid username or password."
+            )
 
     st.stop()
 
@@ -105,7 +139,6 @@ st.markdown(
     """
     <style>
 
-    /* Main title */
     .main-title {
         font-size: 42px;
         font-weight: 700;
@@ -118,33 +151,11 @@ st.markdown(
         margin-bottom: 30px;
     }
 
-    /* Cards */
     .info-card {
         padding: 20px;
         border-radius: 12px;
         border: 1px solid rgba(128,128,128,0.25);
         margin-bottom: 15px;
-    }
-
-    .card-title {
-        font-size: 20px;
-        font-weight: 600;
-        margin-bottom: 10px;
-    }
-
-    /* Chat */
-    .user-message {
-        background-color: rgba(100,100,255,0.10);
-        padding: 12px;
-        border-radius: 10px;
-        margin: 8px 0;
-    }
-
-    .assistant-message {
-        background-color: rgba(100,255,150,0.10);
-        padding: 12px;
-        border-radius: 10px;
-        margin: 8px 0;
     }
 
     </style>
@@ -175,11 +186,15 @@ with st.sidebar:
 
     st.header("⚙️ Settings")
 
-    # Logout button
+    # --------------------------------------------------------
+    # Logout
+    # --------------------------------------------------------
+
     if st.button(
         "🚪 Logout",
         use_container_width=True,
     ):
+
         st.session_state.authenticated = False
         st.session_state.processed = False
         st.session_state.result = None
@@ -189,6 +204,10 @@ with st.sidebar:
 
     st.divider()
 
+    # --------------------------------------------------------
+    # Language
+    # --------------------------------------------------------
+
     language = st.selectbox(
         "Transcription Language",
         ["en", "hi"],
@@ -196,6 +215,10 @@ with st.sidebar:
     )
 
     st.divider()
+
+    # --------------------------------------------------------
+    # Supported input
+    # --------------------------------------------------------
 
     st.subheader("📌 Supported Input")
 
@@ -250,12 +273,21 @@ source = None
 uploaded_file = None
 
 
+# ============================================================
+# YOUTUBE INPUT
+# ============================================================
+
 if input_method == "YouTube URL":
 
     source = st.text_input(
         "YouTube URL",
         placeholder="https://www.youtube.com/watch?v=...",
     )
+
+
+# ============================================================
+# FILE INPUT
+# ============================================================
 
 else:
 
@@ -285,6 +317,10 @@ process_button = st.button(
 )
 
 
+# ============================================================
+# PROCESSING
+# ============================================================
+
 if process_button:
 
     # --------------------------------------------------------
@@ -294,22 +330,30 @@ if process_button:
     if input_method == "YouTube URL":
 
         if not source:
-            st.error("Please enter a YouTube URL.")
+
+            st.error(
+                "Please enter a YouTube URL."
+            )
+
             st.stop()
 
     else:
 
         if uploaded_file is None:
-            st.error("Please upload an audio or video file.")
-            st.stop()
 
-    # --------------------------------------------------------
-    # Process uploaded file
-    # --------------------------------------------------------
+            st.error(
+                "Please upload an audio or video file."
+            )
+
+            st.stop()
 
     temp_file_path = None
 
     try:
+
+        # ----------------------------------------------------
+        # Upload file
+        # ----------------------------------------------------
 
         if input_method == "Upload File":
 
@@ -331,7 +375,7 @@ if process_button:
             source = temp_file_path
 
         # ----------------------------------------------------
-        # Pipeline
+        # Processing pipeline
         # ----------------------------------------------------
 
         with st.status(
@@ -339,64 +383,125 @@ if process_button:
             expanded=True,
         ) as status:
 
-            # Step 1
-            st.write("🎵 Processing audio/video...")
+            # =================================================
+            # STEP 1 - AUDIO
+            # =================================================
+
+            st.write(
+                "🎵 Processing audio/video..."
+            )
 
             chunks = process_input(source)
 
+            if not chunks:
+
+                raise ValueError(
+                    "No audio chunks were generated."
+                )
+
             st.write(
-                f"✅ Audio processed into {len(chunks)} chunk(s)"
+                f"✅ Audio processed into "
+                f"{len(chunks)} chunk(s)"
             )
 
-            # Step 2
-            st.write("🎙️ Transcribing...")
+            # =================================================
+            # STEP 2 - TRANSCRIPTION
+            # =================================================
+
+            st.write(
+                "🎙️ Transcribing..."
+            )
 
             transcript = transcribe_all(
                 chunks,
-                language,
+                language=language,
             )
 
-            st.write("✅ Transcription completed")
+            if not transcript:
 
-            # Step 3
-            st.write("🧠 Generating title...")
+                raise ValueError(
+                    "Transcription returned empty text."
+                )
 
-            title = generate_title(transcript)
+            st.write(
+                "✅ Transcription completed"
+            )
 
-            # Step 4
-            st.write("📝 Generating summary...")
+            # =================================================
+            # STEP 3 - TITLE
+            # =================================================
 
-            summary = summarize(transcript)
+            st.write(
+                "🧠 Generating title..."
+            )
 
-            # Step 5
-            st.write("✅ Extracting action items...")
+            title = generate_title(
+                transcript
+            )
+
+            # =================================================
+            # STEP 4 - SUMMARY
+            # =================================================
+
+            st.write(
+                "📝 Generating summary..."
+            )
+
+            summary = summarize(
+                transcript
+            )
+
+            # =================================================
+            # STEP 5 - ACTION ITEMS
+            # =================================================
+
+            st.write(
+                "✅ Extracting action items..."
+            )
 
             action_items = extract_action_items(
                 transcript
             )
 
-            # Step 6
-            st.write("🔑 Extracting key decisions...")
+            # =================================================
+            # STEP 6 - DECISIONS
+            # =================================================
+
+            st.write(
+                "🔑 Extracting key decisions..."
+            )
 
             decisions = extract_key_decisions(
                 transcript
             )
 
-            # Step 7
-            st.write("❓ Extracting open questions...")
+            # =================================================
+            # STEP 7 - QUESTIONS
+            # =================================================
+
+            st.write(
+                "❓ Extracting open questions..."
+            )
 
             questions = extract_questions(
                 transcript
             )
 
-            # Step 8
-            st.write("🔎 Building RAG knowledge base...")
+            # =================================================
+            # STEP 8 - RAG
+            # =================================================
+
+            st.write(
+                "🔎 Building RAG knowledge base..."
+            )
 
             rag_chain = build_rag_chain(
                 transcript
             )
 
-            st.write("✅ RAG system ready")
+            st.write(
+                "✅ RAG system ready"
+            )
 
             status.update(
                 label="✅ Video analysis completed!",
@@ -408,12 +513,19 @@ if process_button:
         # ----------------------------------------------------
 
         st.session_state.result = {
+
             "title": title,
+
             "transcript": transcript,
+
             "summary": summary,
+
             "action_items": action_items,
+
             "key_decisions": decisions,
+
             "open_questions": questions,
+
             "rag_chain": rag_chain,
         }
 
@@ -423,7 +535,7 @@ if process_button:
         st.session_state.chat_history = []
 
         st.success(
-            "Your video has been successfully analyzed!"
+            "🎉 Your video has been successfully analyzed!"
         )
 
     except Exception as e:
@@ -434,9 +546,13 @@ if process_button:
 
     finally:
 
-        # Remove temporary uploaded file
-        if temp_file_path and os.path.exists(
+        # ----------------------------------------------------
+        # Delete temporary uploaded file
+        # ----------------------------------------------------
+
+        if (
             temp_file_path
+            and os.path.exists(temp_file_path)
         ):
 
             try:
@@ -486,12 +602,14 @@ if st.session_state.processed:
     col1, col2, col3 = st.columns(3)
 
     # --------------------------------------------------------
-    # Action Items
+    # ACTION ITEMS
     # --------------------------------------------------------
 
     with col1:
 
-        st.subheader("✅ Action Items")
+        st.subheader(
+            "✅ Action Items"
+        )
 
         st.markdown(
             f"""
@@ -503,12 +621,14 @@ if st.session_state.processed:
         )
 
     # --------------------------------------------------------
-    # Decisions
+    # DECISIONS
     # --------------------------------------------------------
 
     with col2:
 
-        st.subheader("🔑 Key Decisions")
+        st.subheader(
+            "🔑 Key Decisions"
+        )
 
         st.markdown(
             f"""
@@ -520,12 +640,14 @@ if st.session_state.processed:
         )
 
     # --------------------------------------------------------
-    # Questions
+    # QUESTIONS
     # --------------------------------------------------------
 
     with col3:
 
-        st.subheader("❓ Open Questions")
+        st.subheader(
+            "❓ Open Questions"
+        )
 
         st.markdown(
             f"""
@@ -542,7 +664,9 @@ if st.session_state.processed:
 
     st.divider()
 
-    st.subheader("📜 Full Transcript")
+    st.subheader(
+        "📜 Full Transcript"
+    )
 
     with st.expander(
         "Click to view complete transcript"
@@ -568,27 +692,27 @@ if st.session_state.processed:
 
     st.divider()
 
-    st.header("💬 Chat with Your Video")
+    st.header(
+        "💬 Chat with Your Video"
+    )
 
     st.caption(
         "Ask questions about the content of the video."
     )
 
     # --------------------------------------------------------
-    # Display chat history
+    # Chat history
     # --------------------------------------------------------
 
     for message in st.session_state.chat_history:
 
-        if message["role"] == "user":
+        with st.chat_message(
+            message["role"]
+        ):
 
-            with st.chat_message("user"):
-                st.write(message["content"])
-
-        else:
-
-            with st.chat_message("assistant"):
-                st.write(message["content"])
+            st.write(
+                message["content"]
+            )
 
     # --------------------------------------------------------
     # Chat input
@@ -600,7 +724,10 @@ if st.session_state.processed:
 
     if question:
 
-        # Add user message
+        # ----------------------------------------------------
+        # User message
+        # ----------------------------------------------------
+
         st.session_state.chat_history.append(
             {
                 "role": "user",
@@ -612,7 +739,10 @@ if st.session_state.processed:
 
             st.write(question)
 
-        # Generate answer
+        # ----------------------------------------------------
+        # Assistant response
+        # ----------------------------------------------------
+
         with st.chat_message("assistant"):
 
             with st.spinner(
@@ -638,11 +768,13 @@ if st.session_state.processed:
                 except Exception as e:
 
                     error_message = (
-                        f"Sorry, I couldn't answer that. "
+                        "Sorry, I couldn't answer that.\n\n"
                         f"Error: {str(e)}"
                     )
 
-                    st.error(error_message)
+                    st.error(
+                        error_message
+                    )
 
                     st.session_state.chat_history.append(
                         {
