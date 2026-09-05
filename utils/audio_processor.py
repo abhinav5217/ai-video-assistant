@@ -9,7 +9,7 @@ from utils.bgutil_setup import ensure_bgutil_dependencies
 
 
 # ============================================================
-# CONFIG
+# CONFIGURATION
 # ============================================================
 
 MAX_CHUNK_SIZE = 20 * 1024 * 1024  # 20 MB
@@ -18,6 +18,11 @@ DEFAULT_CHUNK_LENGTH_MS = 10 * 60 * 1000  # 10 minutes
 SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit PCM
+
+
+# ============================================================
+# PROJECT PATHS
+# ============================================================
 
 PROJECT_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
@@ -33,132 +38,122 @@ BGUTIL_SERVER_DIR = os.path.join(
     "server"
 )
 
+BGUTIL_SCRIPT_PATH = os.path.join(
+    BGUTIL_SERVER_DIR,
+    "src",
+    "generate_once.ts"
+)
+
 
 # ============================================================
-# CHECK FFMPEG
+# BASIC CHECKS
 # ============================================================
 
 def check_ffmpeg():
-    """Check whether FFmpeg is installed."""
+    """
+    Check whether FFmpeg is installed.
+    """
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg_path = shutil.which("ffmpeg")
 
-    if not ffmpeg:
+    if not ffmpeg_path:
         raise RuntimeError(
             "FFmpeg not found. Please install FFmpeg."
         )
 
-    print(f"FFmpeg: {ffmpeg}")
+    print(f"FFmpeg: {ffmpeg_path}")
 
-    return ffmpeg
+    return ffmpeg_path
 
-
-# ============================================================
-# CHECK DENO
-# ============================================================
 
 def check_deno():
-    """Check whether Deno is installed."""
+    """
+    Check whether Deno is installed.
+    """
 
-    deno = shutil.which("deno")
+    deno_path = shutil.which("deno")
 
-    if deno:
-        print(f"Deno: {deno}")
-        return deno
+    # macOS/Homebrew fallback
+    if not deno_path:
+        possible_paths = [
+            "/opt/homebrew/bin/deno",
+            "/usr/local/bin/deno",
+        ]
 
-    possible_paths = [
-        "/usr/local/bin/deno",
-        "/opt/homebrew/bin/deno",
-        os.path.expanduser("~/.deno/bin/deno"),
-    ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                deno_path = path
+                break
 
-    for path in possible_paths:
+    if not deno_path:
+        raise RuntimeError(
+            "Deno not found. Please install Deno."
+        )
 
-        if os.path.exists(path):
+    print(f"Deno: {deno_path}")
 
-            print(f"Deno: {path}")
+    return deno_path
 
-            return path
-
-    raise RuntimeError(
-        "Deno not found. Please install Deno."
-    )
-
-
-# ============================================================
-# CHECK BGUTIL SOURCE
-# ============================================================
 
 def check_bgutil():
     """
     Check whether BgUtils provider source exists.
-
-    NOTE:
-    We do NOT raise an error here if it is missing.
-    bgutil_setup.py will download it automatically.
     """
 
-    src_dir = os.path.join(
-        BGUTIL_SERVER_DIR,
-        "src"
-    )
-
-    if os.path.isdir(src_dir):
-
+    if not os.path.exists(BGUTIL_SERVER_DIR):
         print(
-            "BgUtils provider source found:"
-            f" {BGUTIL_SERVER_DIR}"
+            f"BgUtils provider source not found: "
+            f"{BGUTIL_SERVER_DIR}"
         )
-
-        return True
-
-    print(
-        "BgUtils provider source not found locally."
-    )
+        return False
 
     print(
-        "The automatic BgUtils setup will "
-        "download it."
+        f"BgUtils provider source found: "
+        f"{BGUTIL_SERVER_DIR}"
     )
 
-    return False
+    return True
+
+
+def check_bgutil_script():
+    """
+    Check whether generate_once.ts exists.
+    """
+
+    if not os.path.exists(BGUTIL_SCRIPT_PATH):
+        print(
+            f"BgUtils script not found: "
+            f"{BGUTIL_SCRIPT_PATH}"
+        )
+        return False
+
+    print(
+        f"BgUtils script found: "
+        f"{BGUTIL_SCRIPT_PATH}"
+    )
+
+    return True
 
 
 # ============================================================
 # YOUTUBE OPTIONS
 # ============================================================
 
-def build_youtube_options(output_template):
-
+def build_youtube_options(output_dir: str):
     """
     Build yt-dlp options for YouTube.
+
+    Uses:
+    - Deno for JS challenge solving
+    - BgUtils PO Token provider
+    - Multiple YouTube clients
     """
 
-    extractor_args = {
+    deno_path = check_deno()
 
-        "youtube": {
-
-            "player_client": [
-                "mweb",
-                "web_safari",
-                "tv",
-                "web_embedded",
-            ]
-
-        },
-
-        "youtubepot-bgutilscript": {
-
-            "server_home": BGUTIL_SERVER_DIR
-
-        },
-
-    }
-
-    return {
-
+    options = {
         # ----------------------------------------------------
-        # Download best available audio
+        # Audio format
         # ----------------------------------------------------
 
         "format": "bestaudio/best",
@@ -167,146 +162,107 @@ def build_youtube_options(output_template):
         # Output
         # ----------------------------------------------------
 
-        "outtmpl": output_template,
+        "outtmpl": os.path.join(
+            output_dir,
+            "%(id)s.%(ext)s"
+        ),
+
+        # ----------------------------------------------------
+        # Don't download video unnecessarily
+        # ----------------------------------------------------
 
         "noplaylist": True,
-
-        # ----------------------------------------------------
-        # Retry settings
-        # ----------------------------------------------------
-
-        "retries": 5,
-
-        "fragment_retries": 5,
-
-        "file_access_retries": 3,
-
-        "extractor_retries": 3,
-
-        "socket_timeout": 30,
-
-        "continuedl": True,
 
         # ----------------------------------------------------
         # Deno JavaScript runtime
         # ----------------------------------------------------
 
         "js_runtimes": {
-            "deno": {}
+            "deno": {
+                "paths": [deno_path]
+            }
         },
+
+        # ----------------------------------------------------
+        # Remote EJS components
+        # ----------------------------------------------------
 
         "remote_components": {
             "ejs:npm"
         },
 
         # ----------------------------------------------------
-        # YouTube extractor arguments
+        # Extractor configuration
         # ----------------------------------------------------
 
-        "extractor_args": extractor_args,
+        "extractor_args": {
+            "youtube": {
+                "player_client": [
+                    "mweb",
+                    "web_safari",
+                    "tv",
+                    "web_embedded"
+                ]
+            },
 
-        # ----------------------------------------------------
-        # HTTP headers
-        # ----------------------------------------------------
+            # ------------------------------------------------
+            # BgUtils script provider
+            # ------------------------------------------------
 
-        "http_headers": {
-
-            "User-Agent": (
-                "Mozilla/5.0 "
-                "(Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/131.0.0.0 "
-                "Safari/537.36"
-            ),
-
-            "Accept-Language": (
-                "en-US,en;q=0.9"
-            ),
-
+            "youtubepot-bgutilscript": {
+                "server_home": BGUTIL_SERVER_DIR,
+                "script_path": BGUTIL_SCRIPT_PATH,
+            },
         },
 
         # ----------------------------------------------------
-        # Convert to WAV
+        # Retry configuration
         # ----------------------------------------------------
 
-        "postprocessors": [
-
-            {
-
-                "key": "FFmpegExtractAudio",
-
-                "preferredcodec": "wav",
-
-            }
-
-        ],
+        "retries": 3,
+        "fragment_retries": 3,
 
         # ----------------------------------------------------
-        # Logging
+        # Continue / overwrite
+        # ----------------------------------------------------
+
+        "continuedl": True,
+        "overwrites": True,
+
+        # ----------------------------------------------------
+        # Quiet settings
         # ----------------------------------------------------
 
         "quiet": False,
-
         "no_warnings": False,
 
+        # ----------------------------------------------------
+        # Networking
+        # ----------------------------------------------------
+
+        "socket_timeout": 30,
+
+        # ----------------------------------------------------
+        # Post processing
+        # ----------------------------------------------------
+
+        "postprocessors": [],
     }
 
-
-# ============================================================
-# FIND DOWNLOADED FILE
-# ============================================================
-
-def find_downloaded_audio(temp_dir):
-
-    """
-    Find downloaded audio/video file.
-    """
-
-    supported_extensions = (
-
-        ".wav",
-        ".mp3",
-        ".m4a",
-        ".webm",
-        ".mp4",
-        ".opus",
-
-    )
-
-    for filename in os.listdir(temp_dir):
-
-        if filename.lower().endswith(
-            supported_extensions
-        ):
-
-            return os.path.join(
-                temp_dir,
-                filename
-            )
-
-    return None
+    return options
 
 
 # ============================================================
 # DOWNLOAD YOUTUBE AUDIO
 # ============================================================
 
-def download_youtube_audio(url):
-
+def download_youtube_audio(url: str):
     """
-    Download YouTube audio using yt-dlp.
-
-    BgUtils source and dependencies are automatically
-    prepared if they are missing.
+    Download audio from YouTube and return the local file path.
     """
 
     print("\n" + "=" * 60)
-
-    print(
-        "Starting YouTube download"
-    )
-
+    print("Starting YouTube audio download")
     print("=" * 60)
 
     # --------------------------------------------------------
@@ -322,29 +278,32 @@ def download_youtube_audio(url):
     check_deno()
 
     # --------------------------------------------------------
-    # Check local BgUtils source
+    # Check BgUtils source
     # --------------------------------------------------------
 
     check_bgutil()
 
     # --------------------------------------------------------
-    # IMPORTANT:
-    # Setup / download BgUtils automatically
+    # Setup BgUtils dependencies
     # --------------------------------------------------------
 
-    print(
-        "\nChecking BgUtils dependencies..."
-    )
+    print("\nChecking BgUtils dependencies...")
 
     if not ensure_bgutil_dependencies():
-
         raise RuntimeError(
             "Could not setup BgUtils PO Token provider."
         )
 
-    print(
-        "BgUtils dependencies are ready."
-    )
+    print("BgUtils dependencies are ready.")
+
+    # --------------------------------------------------------
+    # Check script
+    # --------------------------------------------------------
+
+    if not check_bgutil_script():
+        raise RuntimeError(
+            "BgUtils generate_once.ts script was not found."
+        )
 
     # --------------------------------------------------------
     # Temporary directory
@@ -358,203 +317,228 @@ def download_youtube_audio(url):
         f"Temporary directory: {temp_dir}"
     )
 
+    # --------------------------------------------------------
+    # Build yt-dlp options
+    # --------------------------------------------------------
+
+    ydl_opts = build_youtube_options(
+        temp_dir
+    )
+
+    print("\nDownloading YouTube audio...")
+
     try:
-
-        # ----------------------------------------------------
-        # Output template
-        # ----------------------------------------------------
-
-        output_template = os.path.join(
-            temp_dir,
-            "%(id)s.%(ext)s"
-        )
-
-        # ----------------------------------------------------
-        # yt-dlp options
-        # ----------------------------------------------------
-
-        ydl_opts = build_youtube_options(
-            output_template
-        )
-
-        print(
-            "\nDownloading YouTube audio..."
-        )
 
         # ----------------------------------------------------
         # Download
         # ----------------------------------------------------
 
-        with yt_dlp.YoutubeDL(
-            ydl_opts
-        ) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 
-            ydl.download([url])
+            info = ydl.extract_info(
+                url,
+                download=True
+            )
+
+            downloaded_file = ydl.prepare_filename(
+                info
+            )
 
         # ----------------------------------------------------
-        # Find downloaded file
+        # Find actual downloaded file
         # ----------------------------------------------------
 
-        downloaded_file = find_downloaded_audio(
-            temp_dir
-        )
+        base_name = os.path.splitext(
+            downloaded_file
+        )[0]
 
-        if not downloaded_file:
+        possible_extensions = [
+            ".webm",
+            ".m4a",
+            ".mp4",
+            ".opus",
+            ".mp3",
+            ".wav"
+        ]
 
+        audio_file = None
+
+        for ext in possible_extensions:
+
+            candidate = base_name + ext
+
+            if os.path.exists(candidate):
+                audio_file = candidate
+                break
+
+        # ----------------------------------------------------
+        # Fallback: search temp directory
+        # ----------------------------------------------------
+
+        if not audio_file:
+
+            files = os.listdir(temp_dir)
+
+            for filename in files:
+
+                if filename.lower().endswith(
+                    tuple(possible_extensions)
+                ):
+                    audio_file = os.path.join(
+                        temp_dir,
+                        filename
+                    )
+                    break
+
+        if not audio_file:
             raise RuntimeError(
-                "YouTube audio download completed "
-                "but output file was not found."
+                "YouTube audio file was not found after download."
             )
 
         print(
-            "\nDownloaded file:"
-            f" {downloaded_file}"
-        )
-
-        # ----------------------------------------------------
-        # Load audio
-        # ----------------------------------------------------
-
-        audio = AudioSegment.from_file(
-            downloaded_file
-        )
-
-        print(
-            "Original audio:"
-            f" {audio.channels} channels,"
-            f" {audio.frame_rate} Hz,"
-            f" {audio.sample_width * 8}-bit"
+            f"Downloaded audio: {audio_file}"
         )
 
         # ----------------------------------------------------
         # Normalize audio
         # ----------------------------------------------------
 
-        audio = (
-            audio
-            .set_channels(CHANNELS)
-            .set_frame_rate(SAMPLE_RATE)
-            .set_sample_width(SAMPLE_WIDTH)
+        wav_path = normalize_audio(
+            audio_file,
+            temp_dir
         )
 
-        normalized_path = os.path.join(
-            temp_dir,
-            "normalized.wav"
-        )
+        return wav_path
 
-        audio.export(
-            normalized_path,
-            format="wav"
-        )
+    except Exception as e:
 
         print(
-            f"Normalized WAV:"
-            f" {normalized_path}"
+            f"\nYouTube download error: "
+            f"{type(e).__name__}: {e}"
         )
 
-        print(
-            "Audio format:"
-            f" {audio.channels} channel,"
-            f" {audio.frame_rate} Hz,"
-            f" {audio.sample_width * 8}-bit"
-        )
-
-        return normalized_path
-
-    except Exception:
-
-        shutil.rmtree(
-            temp_dir,
-            ignore_errors=True
-        )
+        # Don't delete temp directory here.
+        # Keeping it makes debugging easier.
 
         raise
 
 
 # ============================================================
-# PROCESS LOCAL FILE
+# NORMALIZE AUDIO
 # ============================================================
 
-def process_local_file(file_path):
-
+def normalize_audio(
+    input_path: str,
+    output_dir: str
+):
     """
-    Process uploaded local audio/video file.
+    Convert audio to:
+    - WAV
+    - Mono
+    - 16 kHz
+    - 16-bit PCM
     """
 
-    print("\n" + "=" * 60)
+    print("\nNormalizing audio...")
 
-    print(
-        "Processing local file"
-    )
+    try:
 
-    print("=" * 60)
+        audio = AudioSegment.from_file(
+            input_path
+        )
 
-    check_ffmpeg()
+        # ----------------------------------------------------
+        # Mono
+        # ----------------------------------------------------
+
+        audio = audio.set_channels(
+            CHANNELS
+        )
+
+        # ----------------------------------------------------
+        # 16 kHz
+        # ----------------------------------------------------
+
+        audio = audio.set_frame_rate(
+            SAMPLE_RATE
+        )
+
+        # ----------------------------------------------------
+        # 16-bit
+        # ----------------------------------------------------
+
+        audio = audio.set_sample_width(
+            SAMPLE_WIDTH
+        )
+
+        # ----------------------------------------------------
+        # Output path
+        # ----------------------------------------------------
+
+        output_path = os.path.join(
+            output_dir,
+            "normalized_audio.wav"
+        )
+
+        # ----------------------------------------------------
+        # Export
+        # ----------------------------------------------------
+
+        audio.export(
+            output_path,
+            format="wav"
+        )
+
+        print(
+            f"Normalized audio: {output_path}"
+        )
+
+        print(
+            f"Audio format: "
+            f"{audio.channels} channel, "
+            f"{audio.frame_rate} Hz, "
+            f"{audio.sample_width * 8}-bit"
+        )
+
+        return output_path
+
+    except Exception as e:
+
+        raise RuntimeError(
+            f"Audio normalization failed: {e}"
+        )
+
+
+# ============================================================
+# PROCESS LOCAL / UPLOADED FILE
+# ============================================================
+
+def process_local_file(
+    file_path: str
+):
+    """
+    Process uploaded/local audio or video file.
+    """
 
     if not os.path.exists(file_path):
-
         raise FileNotFoundError(
             f"File not found: {file_path}"
         )
 
     print(
-        f"Input file: {file_path}"
+        f"\nProcessing local file: {file_path}"
     )
-
-    # --------------------------------------------------------
-    # Load media
-    # --------------------------------------------------------
-
-    audio = AudioSegment.from_file(
-        file_path
-    )
-
-    print(
-        "Original audio:"
-        f" {audio.channels} channels,"
-        f" {audio.frame_rate} Hz,"
-        f" {audio.sample_width * 8}-bit"
-    )
-
-    # --------------------------------------------------------
-    # Normalize
-    # --------------------------------------------------------
-
-    audio = (
-        audio
-        .set_channels(CHANNELS)
-        .set_frame_rate(SAMPLE_RATE)
-        .set_sample_width(SAMPLE_WIDTH)
-    )
-
-    # --------------------------------------------------------
-    # Temporary directory
-    # --------------------------------------------------------
 
     temp_dir = tempfile.mkdtemp(
         prefix="local_audio_"
     )
 
-    normalized_path = os.path.join(
-        temp_dir,
-        "normalized.wav"
+    wav_path = normalize_audio(
+        file_path,
+        temp_dir
     )
 
-    # --------------------------------------------------------
-    # Export
-    # --------------------------------------------------------
-
-    audio.export(
-        normalized_path,
-        format="wav"
-    )
-
-    print(
-        f"Normalized WAV:"
-        f" {normalized_path}"
-    )
-
-    return normalized_path
+    return wav_path
 
 
 # ============================================================
@@ -562,121 +546,145 @@ def process_local_file(file_path):
 # ============================================================
 
 def split_audio(
-    audio_path,
-    chunk_length_ms=DEFAULT_CHUNK_LENGTH_MS
+    audio_path: str,
+    chunk_length_ms: int = DEFAULT_CHUNK_LENGTH_MS
 ):
-
     """
-    Split audio into smaller WAV chunks.
+    Split audio into chunks.
 
-    Each chunk must remain below the OpenAI
-    upload size limit.
+    Each chunk is checked against the
+    OpenAI 25 MB upload limit.
+
+    We target 20 MB for safety.
     """
 
-    print("\n" + "=" * 60)
+    print("\nSplitting audio...")
 
-    print(
-        "Splitting audio"
-    )
-
-    print("=" * 60)
+    if not os.path.exists(audio_path):
+        raise FileNotFoundError(
+            f"Audio file not found: {audio_path}"
+        )
 
     audio = AudioSegment.from_file(
         audio_path
     )
 
-    total_duration = len(audio)
+    duration_ms = len(audio)
 
     print(
-        "Total duration:"
-        f" {total_duration / 1000 / 60:.2f} minutes"
+        f"Audio duration: "
+        f"{duration_ms / 1000:.2f} seconds"
     )
 
-    temp_dir = os.path.dirname(
-        audio_path
+    chunks_dir = tempfile.mkdtemp(
+        prefix="audio_chunks_"
     )
 
     chunks = []
 
-    start = 0
+    # --------------------------------------------------------
+    # Split
+    # --------------------------------------------------------
 
     chunk_number = 1
 
-    while start < total_duration:
+    for start in range(
+        0,
+        duration_ms,
+        chunk_length_ms
+    ):
 
         end = min(
             start + chunk_length_ms,
-            total_duration
+            duration_ms
         )
 
         chunk = audio[start:end]
 
         chunk_path = os.path.join(
-            temp_dir,
-            f"chunk_{chunk_number}.wav"
+            chunks_dir,
+            f"chunk_{chunk_number:03d}.wav"
         )
-
-        # ----------------------------------------------------
-        # Export chunk
-        # ----------------------------------------------------
 
         chunk.export(
             chunk_path,
             format="wav"
         )
 
+        # ----------------------------------------------------
+        # Check size
+        # ----------------------------------------------------
+
         file_size = os.path.getsize(
             chunk_path
         )
 
-        print(
-            f"Chunk {chunk_number}: "
-            f"{file_size / 1024 / 1024:.2f} MB"
-        )
-
         # ----------------------------------------------------
-        # Check size
+        # If too large, recursively split
         # ----------------------------------------------------
 
         if file_size > MAX_CHUNK_SIZE:
 
             print(
-                f"Chunk {chunk_number} is too large."
+                f"Chunk {chunk_number} is too large "
+                f"({file_size / 1024 / 1024:.2f} MB)"
             )
 
-            os.remove(
+            os.remove(chunk_path)
+
+            # Split this chunk into smaller pieces
+            smaller_chunks = split_audio(
+                audio_path=create_temp_audio(
+                    chunk
+                ),
+                chunk_length_ms=chunk_length_ms // 2
+            )
+
+            chunks.extend(
+                smaller_chunks
+            )
+
+        else:
+
+            chunks.append(
                 chunk_path
             )
-
-            reduced_length = int(
-                chunk_length_ms * 0.8
-            )
-
-            if reduced_length < 60 * 1000:
-
-                raise RuntimeError(
-                    "Could not create an audio chunk "
-                    "below the OpenAI upload limit."
-                )
-
-            return split_audio(
-                audio_path,
-                chunk_length_ms=reduced_length
-            )
-
-        chunks.append(
-            chunk_path
-        )
-
-        start = end
 
         chunk_number += 1
 
     print(
-        f"\nTotal chunks: {len(chunks)}"
+        f"Total chunks: {len(chunks)}"
     )
 
     return chunks
+
+
+# ============================================================
+# TEMP AUDIO CREATOR
+# ============================================================
+
+def create_temp_audio(
+    audio: AudioSegment
+):
+    """
+    Save an AudioSegment as a temporary WAV file.
+    """
+
+    temp_dir = tempfile.mkdtemp(
+        prefix="temp_audio_"
+    )
+
+    path = os.path.join(
+        temp_dir,
+        "audio.wav"
+    )
+
+    audio.export(
+        path,
+        format="wav"
+    )
+
+    return path
 
 
 # ============================================================
@@ -684,12 +692,11 @@ def split_audio(
 # ============================================================
 
 def process_input(
-    source,
-    input_type="youtube"
+    source: str,
+    input_type: str = "youtube"
 ):
-
     """
-    Main input processor.
+    Main entry point.
 
     input_type:
         youtube
@@ -697,12 +704,12 @@ def process_input(
     """
 
     print("\n" + "=" * 60)
+    print("Processing input")
+    print("=" * 60)
 
     print(
-        "Processing input"
+        f"Input type: {input_type}"
     )
-
-    print("=" * 60)
 
     # --------------------------------------------------------
     # YouTube
@@ -715,7 +722,7 @@ def process_input(
         )
 
     # --------------------------------------------------------
-    # Uploaded file
+    # Local / uploaded file
     # --------------------------------------------------------
 
     elif input_type == "file":
@@ -724,19 +731,31 @@ def process_input(
             source
         )
 
+    # --------------------------------------------------------
+    # Invalid input
+    # --------------------------------------------------------
+
     else:
 
         raise ValueError(
-            "input_type must be either "
-            "'youtube' or 'file'."
+            "Invalid input_type. "
+            "Use 'youtube' or 'file'."
         )
 
     # --------------------------------------------------------
-    # Split audio
+    # Split into chunks
     # --------------------------------------------------------
 
     chunks = split_audio(
         audio_path
+    )
+
+    print(
+        "\nAudio processing completed."
+    )
+
+    print(
+        f"Total chunks created: {len(chunks)}"
     )
 
     return chunks
