@@ -1,6 +1,7 @@
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -11,323 +12,300 @@ from pathlib import Path
 # PATHS
 # ============================================================
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            ".."
+        )
+    )
+)
 
-BGUTIL_DIR = PROJECT_ROOT / "bgutil-ytdlp-pot-provider"
-BGUTIL_SERVER_DIR = BGUTIL_DIR / "server"
+BGUTIL_DIR = (
+    PROJECT_ROOT /
+    "bgutil-ytdlp-pot-provider"
+)
 
-BGUTIL_SCRIPT = BGUTIL_SERVER_DIR / "src" / "generate_once.ts"
-BGUTIL_MAIN = BGUTIL_SERVER_DIR / "src" / "main.ts"
+BGUTIL_SERVER_DIR = (
+    BGUTIL_DIR /
+    "server"
+)
+
+BGUTIL_MAIN = (
+    BGUTIL_SERVER_DIR /
+    "src" /
+    "main.ts"
+)
+
+BGUTIL_SCRIPT = (
+    BGUTIL_SERVER_DIR /
+    "src" /
+    "generate_once.ts"
+)
+
+
+# ============================================================
+# SERVER CONFIG
+# ============================================================
+
+BGUTIL_HTTP_HOST = "127.0.0.1"
+
+BGUTIL_HTTP_PORT = 4416
+
+BGUTIL_SERVER_URL = (
+    f"http://{BGUTIL_HTTP_HOST}:{BGUTIL_HTTP_PORT}"
+)
+
+
+# ============================================================
+# VERSION
+# ============================================================
 
 BGUTIL_VERSION = "1.3.2"
 
-BGUTIL_ZIP_URL = (
-    "https://github.com/Brainicism/"
-    "bgutil-ytdlp-pot-provider/"
-    f"archive/refs/tags/{BGUTIL_VERSION}.zip"
-)
 
-BGUTIL_HTTP_HOST = "127.0.0.1"
-BGUTIL_HTTP_PORT = 4416
+# ============================================================
+# GLOBAL SERVER PROCESS
+# ============================================================
 
 _bgutil_process = None
 
 
 # ============================================================
-# DENO
+# FIND DENO
 # ============================================================
 
-def find_deno():
+def get_deno_path():
     """
     Find Deno executable.
     """
 
     deno = shutil.which("deno")
 
-    if deno:
-        return deno
+    if not deno:
+        raise RuntimeError(
+            "Deno not found. "
+            "Please install deno."
+        )
 
-    possible_paths = [
-        "/opt/homebrew/bin/deno",
-        "/usr/local/bin/deno",
-    ]
+    print(
+        f"Deno: {deno}"
+    )
 
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-
-    return None
+    return deno
 
 
 # ============================================================
-# DOWNLOAD BGUTIL SOURCE
+# ENSURE BGUTIL SOURCE
 # ============================================================
 
-def download_bgutil_source():
+def ensure_bgutil_source():
     """
-    Download BgUtils source if it is not available.
+    Make sure BgUtils source exists.
+
+    Normally the repository is already included
+    inside the project.
     """
 
-    if BGUTIL_SERVER_DIR.exists() and BGUTIL_MAIN.exists():
-        print("BgUtils provider source already exists.")
-        return True
-
-    print("BgUtils provider source not found.")
-    print("Downloading BgUtils provider source...")
-
-    zip_path = PROJECT_ROOT / "bgutil_provider.zip"
-
-    try:
-        urllib.request.urlretrieve(
-            BGUTIL_ZIP_URL,
-            zip_path
-        )
-
-        print("BgUtils source downloaded.")
-
-        with zipfile.ZipFile(zip_path, "r") as zip_ref:
-            zip_ref.extractall(PROJECT_ROOT)
-
-        extracted_dir = (
-            PROJECT_ROOT
-            / f"bgutil-ytdlp-pot-provider-{BGUTIL_VERSION}"
-        )
-
-        if not extracted_dir.exists():
-            raise RuntimeError(
-                "Downloaded BgUtils source could not be located."
-            )
-
-        if BGUTIL_DIR.exists():
-            shutil.rmtree(BGUTIL_DIR)
-
-        extracted_dir.rename(BGUTIL_DIR)
-
-        if not BGUTIL_MAIN.exists():
-            raise RuntimeError(
-                "BgUtils main.ts was not found after extraction."
-            )
+    if (
+        BGUTIL_SERVER_DIR.exists()
+        and BGUTIL_MAIN.exists()
+    ):
 
         print(
-            f"BgUtils provider ready: {BGUTIL_DIR}"
+            "BgUtils provider source already exists."
         )
 
-        return True
+        return BGUTIL_SERVER_DIR
 
-    except Exception as e:
-
-        print(
-            f"BgUtils source download failed: {e}"
-        )
-
-        return False
-
-    finally:
-
-        if zip_path.exists():
-            try:
-                zip_path.unlink()
-            except Exception:
-                pass
+    raise RuntimeError(
+        "BgUtils provider source not found.\n"
+        f"Expected directory:\n"
+        f"{BGUTIL_SERVER_DIR}"
+    )
 
 
 # ============================================================
-# INSTALL DEPENDENCIES
+# ENSURE DEPENDENCIES
 # ============================================================
 
 def ensure_bgutil_dependencies():
     """
-    Make sure BgUtils source and dependencies are ready.
+    Install BgUtils Deno dependencies if required.
     """
 
-    if not download_bgutil_source():
-        return False
+    print(
+        "Checking BgUtils dependencies..."
+    )
 
-    deno = find_deno()
+    ensure_bgutil_source()
 
-    if not deno:
-        print("Deno not found.")
-        return False
+    deno = get_deno_path()
 
-    print(f"Deno: {deno}")
-
-    node_modules = BGUTIL_SERVER_DIR / "node_modules"
+    node_modules = (
+        BGUTIL_SERVER_DIR /
+        "node_modules"
+    )
 
     # --------------------------------------------------------
-    # Check existing dependencies
+    # Already installed
     # --------------------------------------------------------
 
     if node_modules.exists():
 
-        try:
+        print(
+            "BgUtils dependencies already installed."
+        )
 
-            if any(node_modules.iterdir()):
-
-                print(
-                    "BgUtils dependencies already installed."
-                )
-
-                return True
-
-        except Exception:
-            pass
-
-    # --------------------------------------------------------
-    # Install dependencies
-    # --------------------------------------------------------
+        return True
 
     print(
         "Installing BgUtils dependencies..."
     )
 
-    try:
+    command = [
+        deno,
+        "install",
+        "--allow-scripts=npm:canvas",
+        "--frozen",
+    ]
 
-        result = subprocess.run(
-            [
-                deno,
-                "install",
-                "--allow-scripts=npm:canvas",
-                "--frozen",
-            ],
-            cwd=str(BGUTIL_SERVER_DIR),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    print(
+        "Running:"
+    )
 
-        if result.stdout:
-            print(result.stdout)
+    print(
+        " ".join(command)
+    )
 
-        if result.stderr:
-            print(result.stderr)
+    result = subprocess.run(
+        command,
+        cwd=str(BGUTIL_SERVER_DIR),
+        capture_output=True,
+        text=True,
+    )
 
-        if result.returncode != 0:
-
-            print(
-                "BgUtils dependency installation failed."
-            )
-
-            return False
-
-        if not node_modules.exists():
-
-            print(
-                "BgUtils node_modules was not created."
-            )
-
-            return False
+    if result.returncode != 0:
 
         print(
-            "BgUtils dependencies installed successfully."
+            result.stdout
         )
-
-        return True
-
-    except Exception as e:
 
         print(
-            f"BgUtils dependency installation error: {e}"
+            result.stderr
         )
 
-        return False
+        raise RuntimeError(
+            "Failed to install BgUtils dependencies."
+        )
+
+    print(
+        "BgUtils dependencies installed successfully."
+    )
+
+    return True
 
 
 # ============================================================
-# START BGUTIL HTTP SERVER
+# CHECK SERVER
 # ============================================================
 
-def start_bgutil_server():
+def is_bgutil_server_running():
     """
-    Start BgUtils HTTP PO Token server.
-
-    Server:
-        http://127.0.0.1:4416
+    Check whether BgUtils HTTP server is responding.
     """
 
-    global _bgutil_process
-
-    # --------------------------------------------------------
-    # Already running in this Python process
-    # --------------------------------------------------------
-
-    if _bgutil_process is not None:
-
-        if _bgutil_process.poll() is None:
-
-            print(
-                "BgUtils HTTP server already running."
-            )
-
-            return True
-
-        _bgutil_process = None
-
-    # --------------------------------------------------------
-    # Make sure dependencies exist
-    # --------------------------------------------------------
-
-    if not ensure_bgutil_dependencies():
-
-        raise RuntimeError(
-            "Could not setup BgUtils dependencies."
-        )
-
-    deno = find_deno()
-
-    if not deno:
-        raise RuntimeError(
-            "Deno not found."
-        )
-
-    if not BGUTIL_MAIN.exists():
-
-        raise RuntimeError(
-            f"BgUtils main.ts not found: {BGUTIL_MAIN}"
-        )
-
-    # --------------------------------------------------------
-    # Check if port already responds
-    # --------------------------------------------------------
-
-    ping_url = (
-        f"http://{BGUTIL_HTTP_HOST}:"
-        f"{BGUTIL_HTTP_PORT}/ping"
+    url = (
+        f"{BGUTIL_SERVER_URL}/ping"
     )
 
     try:
 
         with urllib.request.urlopen(
-            ping_url,
+            url,
             timeout=2
-        ):
+        ) as response:
 
-            print(
-                "BgUtils HTTP server is already running."
-            )
+            status = response.status
 
-            return True
+            if status == 200:
+                return True
 
     except Exception:
-        pass
+        return False
+
+    return False
+
+
+# ============================================================
+# START SERVER
+# ============================================================
+
+def start_bgutil_server():
+    """
+    Start BgUtils HTTP server once.
+    """
+
+    global _bgutil_process
 
     # --------------------------------------------------------
-    # Start server
+    # Already running
     # --------------------------------------------------------
+
+    if is_bgutil_server_running():
+
+        print(
+            "BgUtils HTTP server already running."
+        )
+
+        return True
+
+    # --------------------------------------------------------
+    # Make sure dependencies exist
+    # --------------------------------------------------------
+
+    ensure_bgutil_dependencies()
+
+    # --------------------------------------------------------
+    # Find Deno
+    # --------------------------------------------------------
+
+    deno = get_deno_path()
+
+    if not BGUTIL_MAIN.exists():
+
+        raise RuntimeError(
+            f"BgUtils main.ts not found:\n"
+            f"{BGUTIL_MAIN}"
+        )
 
     print(
-        f"Starting BgUtils HTTP server on "
-        f"{BGUTIL_HTTP_HOST}:{BGUTIL_HTTP_PORT}..."
+        "\nStarting BgUtils HTTP server..."
     )
+
+    command = [
+        deno,
+        "run",
+        "--allow-all",
+        str(BGUTIL_MAIN),
+    ]
+
+    print(
+        "BgUtils command:"
+    )
+
+    print(
+        " ".join(command)
+    )
+
+    # --------------------------------------------------------
+    # Start process
+    # --------------------------------------------------------
 
     try:
 
         _bgutil_process = subprocess.Popen(
-            [
-                deno,
-                "run",
-                "--allow-all",
-                str(BGUTIL_MAIN),
-            ],
+            command,
             cwd=str(BGUTIL_SERVER_DIR),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -338,52 +316,66 @@ def start_bgutil_server():
     except Exception as e:
 
         raise RuntimeError(
-            f"Could not start BgUtils HTTP server: {e}"
+            f"Could not start BgUtils server: {e}"
         )
 
     # --------------------------------------------------------
     # Wait for server
     # --------------------------------------------------------
 
-    max_wait = 30
+    print(
+        "Waiting for BgUtils HTTP server..."
+    )
 
-    for _ in range(max_wait):
+    max_attempts = 30
 
-        # Process died
-        if _bgutil_process.poll() is not None:
+    for attempt in range(
+        max_attempts
+    ):
+
+        # ----------------------------------------------------
+        # Check process
+        # ----------------------------------------------------
+
+        if (
+            _bgutil_process.poll()
+            is not None
+        ):
 
             output = ""
 
             try:
-                output = _bgutil_process.stdout.read()
+                output = (
+                    _bgutil_process.stdout.read()
+                    if _bgutil_process.stdout
+                    else ""
+                )
             except Exception:
                 pass
 
             raise RuntimeError(
                 "BgUtils HTTP server stopped unexpectedly.\n"
-                f"{output}"
+                f"Output:\n{output}"
             )
 
-        try:
+        # ----------------------------------------------------
+        # Check HTTP endpoint
+        # ----------------------------------------------------
 
-            with urllib.request.urlopen(
-                ping_url,
-                timeout=2
-            ):
+        if is_bgutil_server_running():
 
-                print(
-                    "BgUtils HTTP server is ready."
-                )
+            print(
+                f"BgUtils HTTP server ready: "
+                f"{BGUTIL_SERVER_URL}"
+            )
 
-                return True
+            return True
 
-        except Exception:
-
-            time.sleep(1)
+        time.sleep(1)
 
     raise RuntimeError(
-        "BgUtils HTTP server did not become ready "
-        f"within {max_wait} seconds."
+        "BgUtils HTTP server did not start "
+        f"within {max_attempts} seconds."
     )
 
 
@@ -392,21 +384,11 @@ def start_bgutil_server():
 # ============================================================
 
 def get_bgutil_server_url():
+    """
+    Return BgUtils HTTP server URL.
 
-    start_bgutil_server()
+    IMPORTANT:
+    This function DOES NOT start the server.
+    """
 
-    return (
-        f"http://{BGUTIL_HTTP_HOST}:"
-        f"{BGUTIL_HTTP_PORT}"
-    )
-
-
-# ============================================================
-# GET SERVER DIRECTORY
-# ============================================================
-
-def get_bgutil_server_dir():
-
-    ensure_bgutil_dependencies()
-
-    return str(BGUTIL_SERVER_DIR)
+    return BGUTIL_SERVER_URL
