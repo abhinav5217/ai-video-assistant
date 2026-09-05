@@ -1,7 +1,9 @@
 # ── AI Video Assistant ─────────────────────────────────────
 
 # ── Audio / Video ───────────────────────────────────────────
-yt-dlp>=2024.4.9
+# ── Audio / Video ───────────────────────────────────────────
+yt-dlp[default]>=2026.8.19
+deno>=2.3.0
 pydub>=0.25.1
 ffmpeg-python>=0.2.0
 audioop-lts>=0.2.1; python_version >= "3.13"
