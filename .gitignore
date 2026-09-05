@@ -24,3 +24,5 @@ downloads/
 
 # OS
 .DS_Store
+
+bgutil-ytdlp-pot-provider/server/node_modules/

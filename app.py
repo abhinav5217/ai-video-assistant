@@ -30,16 +30,14 @@ st.set_page_config(
 
 
 # ============================================================
-# CONFIG / SECRETS HELPER
+# SECRETS HELPER
 # ============================================================
 
 def get_secret(key: str):
     """
-    Secret ko:
-    1. Streamlit Secrets
+    Read secret from:
+    1. Streamlit Cloud Secrets
     2. Environment variable / .env
-
-    se read karta hai.
     """
 
     # Streamlit Cloud
@@ -62,7 +60,7 @@ APP_PASSWORD = get_secret("APP_PASSWORD")
 
 
 # ============================================================
-# CHECK LOGIN CREDENTIALS
+# CHECK LOGIN CONFIG
 # ============================================================
 
 if not APP_USERNAME or not APP_PASSWORD:
@@ -271,6 +269,7 @@ input_method = st.radio(
 
 source = None
 uploaded_file = None
+input_type = None
 
 
 # ============================================================
@@ -278,6 +277,8 @@ uploaded_file = None
 # ============================================================
 
 if input_method == "YouTube URL":
+
+    input_type = "youtube"
 
     source = st.text_input(
         "YouTube URL",
@@ -290,6 +291,8 @@ if input_method == "YouTube URL":
 # ============================================================
 
 else:
+
+    input_type = "file"
 
     uploaded_file = st.file_uploader(
         "Upload audio/video",
@@ -327,9 +330,9 @@ if process_button:
     # Validate input
     # --------------------------------------------------------
 
-    if input_method == "YouTube URL":
+    if input_type == "youtube":
 
-        if not source:
+        if not source or not source.strip():
 
             st.error(
                 "Please enter a YouTube URL."
@@ -355,7 +358,7 @@ if process_button:
         # Upload file
         # ----------------------------------------------------
 
-        if input_method == "Upload File":
+        if input_type == "file":
 
             file_extension = os.path.splitext(
                 uploaded_file.name
@@ -391,7 +394,10 @@ if process_button:
                 "🎵 Processing audio/video..."
             )
 
-            chunks = process_input(source)
+            chunks = process_input(
+                source,
+                input_type=input_type,
+            )
 
             if not chunks:
 
@@ -556,7 +562,10 @@ if process_button:
         ):
 
             try:
-                os.remove(temp_file_path)
+
+                os.remove(
+                    temp_file_path
+                )
 
             except Exception:
                 pass
@@ -724,10 +733,6 @@ if st.session_state.processed:
 
     if question:
 
-        # ----------------------------------------------------
-        # User message
-        # ----------------------------------------------------
-
         st.session_state.chat_history.append(
             {
                 "role": "user",
@@ -738,10 +743,6 @@ if st.session_state.processed:
         with st.chat_message("user"):
 
             st.write(question)
-
-        # ----------------------------------------------------
-        # Assistant response
-        # ----------------------------------------------------
 
         with st.chat_message("assistant"):
 
