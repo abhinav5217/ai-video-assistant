@@ -13,14 +13,10 @@ from pydub import AudioSegment
 
 DOWNLOAD_DIR = "downloads"
 
-# OpenAI request limit is 25 MiB.
-# Keep our own limit lower for safety.
 MAX_CHUNK_SIZE = 20 * 1024 * 1024  # 20 MB
 
-# 10 minutes
 DEFAULT_CHUNK_LENGTH_MS = 10 * 60 * 1000
 
-# Normalize audio for transcription
 SAMPLE_RATE = 16000
 CHANNELS = 1
 SAMPLE_WIDTH = 2  # 16-bit
@@ -41,13 +37,17 @@ def command_exists(command: str) -> bool:
 # ============================================================
 
 def check_ffmpeg():
+
     ffmpeg_path = shutil.which("ffmpeg")
 
     if ffmpeg_path:
+
         print("FFmpeg:", ffmpeg_path)
+
         return True
 
     print("FFmpeg not found.")
+
     return False
 
 
@@ -56,13 +56,17 @@ def check_ffmpeg():
 # ============================================================
 
 def check_deno():
+
     deno_path = shutil.which("deno")
 
     if not deno_path:
+
         print("Deno: NOT FOUND")
+
         return False
 
     try:
+
         version = subprocess.check_output(
             ["deno", "--version"],
             text=True,
@@ -70,13 +74,19 @@ def check_deno():
         )
 
         print("Deno path:", deno_path)
+
         print("Deno version:")
         print(version)
 
         return True
 
     except Exception as e:
-        print("Deno version check failed:", e)
+
+        print(
+            "Deno version check failed:",
+            e
+        )
+
         return False
 
 
@@ -87,6 +97,7 @@ def check_deno():
 def is_youtube_url(source: str) -> bool:
 
     if not source:
+
         return False
 
     source = source.lower()
@@ -99,23 +110,26 @@ def is_youtube_url(source: str) -> bool:
 
 
 # ============================================================
-# CREATE YOUTUBE DOWNLOAD OPTIONS
+# BUILD YOUTUBE OPTIONS
 # ============================================================
 
-def get_youtube_options(output_template: str):
+def build_youtube_options(
+    output_template: str,
+    player_client: str
+):
 
     return {
 
         # ----------------------------------------------------
-        # IMPORTANT:
-        # Prefer HLS audio from web_safari.
+        # IMPORTANT
         #
-        # This avoids normal GVS HTTPS formats which may
-        # require a YouTube PO Token and return HTTP 403.
+        # DO NOT FORCE m3u8.
+        #
+        # yt-dlp will select a format that is actually
+        # available for this video/client.
         # ----------------------------------------------------
 
         "format": (
-            "bestaudio[protocol^=m3u8]/"
             "bestaudio/"
             "best"
         ),
@@ -125,7 +139,7 @@ def get_youtube_options(output_template: str):
         "noplaylist": True,
 
         # ----------------------------------------------------
-        # Retry settings
+        # Retry
         # ----------------------------------------------------
 
         "retries": 5,
@@ -141,7 +155,7 @@ def get_youtube_options(output_template: str):
         "continuedl": True,
 
         # ----------------------------------------------------
-        # Deno JavaScript runtime
+        # Deno
         # ----------------------------------------------------
 
         "js_runtimes": {
@@ -149,7 +163,7 @@ def get_youtube_options(output_template: str):
         },
 
         # ----------------------------------------------------
-        # yt-dlp EJS components
+        # EJS
         # ----------------------------------------------------
 
         "remote_components": {
@@ -158,46 +172,105 @@ def get_youtube_options(output_template: str):
 
         # ----------------------------------------------------
         # YouTube client
-        #
-        # web_safari currently provides HLS formats that can
-        # avoid the GVS PO-token requirement.
         # ----------------------------------------------------
 
         "extractor_args": {
             "youtube": {
-                "player_client": ["web_safari"]
+                "player_client": [
+                    player_client
+                ]
             }
         },
 
         # ----------------------------------------------------
-        # Browser-like headers
+        # User agent
         # ----------------------------------------------------
 
         "http_headers": {
+
             "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "Mozilla/5.0 "
+                "(Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 "
                 "(KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
+                "Chrome/131.0.0.0 "
+                "Safari/537.36"
             ),
-            "Accept-Language": "en-US,en;q=0.9",
+
+            "Accept-Language":
+                "en-US,en;q=0.9",
+
         },
 
         # ----------------------------------------------------
-        # Convert downloaded audio to WAV
+        # Convert audio to WAV
         # ----------------------------------------------------
 
         "postprocessors": [
+
             {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "wav"
             }
+
         ],
 
         "quiet": False,
 
         "no_warnings": False,
+
     }
+
+
+# ============================================================
+# DOWNLOAD WITH ONE CLIENT
+# ============================================================
+
+def try_youtube_download(
+    url: str,
+    output_template: str,
+    player_client: str
+):
+
+    print("\n----------------------------------------")
+
+    print(
+        "Trying YouTube client:",
+        player_client
+    )
+
+    print("----------------------------------------")
+
+    ydl_opts = build_youtube_options(
+        output_template,
+        player_client
+    )
+
+    try:
+
+        with yt_dlp.YoutubeDL(
+            ydl_opts
+        ) as ydl:
+
+            info = ydl.extract_info(
+                url,
+                download=True
+            )
+
+            return info
+
+    except Exception as e:
+
+        print(
+            f"Client {player_client} failed:"
+        )
+
+        print(
+            type(e).__name__,
+            str(e)
+        )
+
+        return None
 
 
 # ============================================================
@@ -207,10 +280,15 @@ def get_youtube_options(output_template: str):
 def download_youtube_audio(url: str) -> str:
 
     print("\n========================================")
+
     print("YOUTUBE DOWNLOAD")
+
     print("========================================")
 
-    print("YouTube URL:", url)
+    print(
+        "YouTube URL:",
+        url
+    )
 
     # --------------------------------------------------------
     # FFmpeg
@@ -247,152 +325,176 @@ def download_youtube_audio(url: str) -> str:
     )
 
     # --------------------------------------------------------
-    # yt-dlp options
+    # CLIENT STRATEGY
+    #
+    # Try clients in order.
     # --------------------------------------------------------
 
-    ydl_opts = get_youtube_options(
-        output_template
-    )
+    clients = [
+        "web_safari",
+        "tv",
+        "web_embedded"
+    ]
 
-    print("\nYouTube configuration:")
-    print("Player client: web_safari")
-    print("Preferred protocol: HLS / m3u8")
-    print("JavaScript runtime: Deno")
+    info = None
+
+    for client in clients:
+
+        info = try_youtube_download(
+            url=url,
+            output_template=output_template,
+            player_client=client
+        )
+
+        if info:
+
+            print(
+                "\nSuccessful YouTube client:",
+                client
+            )
+
+            break
+
+    # --------------------------------------------------------
+    # All clients failed
+    # --------------------------------------------------------
+
+    if not info:
+
+        print("\n========================================")
+
+        print(
+            "ALL YOUTUBE DOWNLOAD METHODS FAILED"
+        )
+
+        print("========================================")
+
+        raise RuntimeError(
+            "YouTube could not provide a downloadable "
+            "audio/video format. This can happen because "
+            "YouTube is enforcing PO Token/SABR restrictions."
+        )
+
+    # --------------------------------------------------------
+    # Get expected WAV
+    # --------------------------------------------------------
 
     try:
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-
-            print("\nExtracting YouTube information...")
-
-            info = ydl.extract_info(
-                url,
-                download=True
-            )
-
-            print("\nYouTube information extracted.")
-
-            # ------------------------------------------------
-            # Original downloaded filename
-            # ------------------------------------------------
+        with yt_dlp.YoutubeDL(
+            {
+                "outtmpl": output_template
+            }
+        ) as ydl:
 
             original_file = ydl.prepare_filename(
                 info
             )
 
-            print(
-                "Prepared filename:",
+    except Exception:
+
+        original_file = None
+
+    # --------------------------------------------------------
+    # Expected WAV
+    # --------------------------------------------------------
+
+    if original_file:
+
+        expected_wav = (
+            os.path.splitext(
                 original_file
+            )[0]
+            + ".wav"
+        )
+
+        if os.path.exists(
+            expected_wav
+        ):
+
+            print(
+                "\nDownloaded WAV:",
+                expected_wav
             )
 
-            # ------------------------------------------------
-            # Expected WAV
-            # ------------------------------------------------
+            return expected_wav
 
-            expected_wav = (
-                os.path.splitext(original_file)[0]
-                + ".wav"
+    # --------------------------------------------------------
+    # Search temp directory
+    # --------------------------------------------------------
+
+    print(
+        "\nSearching downloaded files..."
+    )
+
+    for root, dirs, files in os.walk(
+        temp_dir
+    ):
+
+        for filename in files:
+
+            file_path = os.path.join(
+                root,
+                filename
             )
 
-            if os.path.exists(expected_wav):
+            if filename.lower().endswith(
+                ".wav"
+            ):
 
                 print(
-                    "\nDownloaded WAV:",
-                    expected_wav
+                    "Downloaded WAV:",
+                    file_path
                 )
 
-                return expected_wav
+                return file_path
 
-            # ------------------------------------------------
-            # Search temporary directory
-            # ------------------------------------------------
+    # --------------------------------------------------------
+    # Search any audio file
+    # --------------------------------------------------------
 
-            print(
-                "\nSearching downloaded files..."
+    print(
+        "WAV not found."
+    )
+
+    print(
+        "Checking downloaded media..."
+    )
+
+    media_extensions = (
+        ".m4a",
+        ".mp3",
+        ".webm",
+        ".mp4",
+        ".opus"
+    )
+
+    for root, dirs, files in os.walk(
+        temp_dir
+    ):
+
+        for filename in files:
+
+            file_path = os.path.join(
+                root,
+                filename
             )
 
-            for filename in os.listdir(temp_dir):
+            if filename.lower().endswith(
+                media_extensions
+            ):
 
-                file_path = os.path.join(
-                    temp_dir,
-                    filename
+                print(
+                    "Downloaded media:",
+                    file_path
                 )
 
-                if filename.lower().endswith(".wav"):
+                return file_path
 
-                    print(
-                        "Downloaded WAV:",
-                        file_path
-                    )
-
-                    return file_path
-
-            # ------------------------------------------------
-            # If WAV wasn't created, look for any media file
-            # ------------------------------------------------
-
-            print(
-                "WAV not found. Checking downloaded files..."
-            )
-
-            for filename in os.listdir(temp_dir):
-
-                file_path = os.path.join(
-                    temp_dir,
-                    filename
-                )
-
-                if os.path.isfile(file_path):
-
-                    print(
-                        "Downloaded file:",
-                        file_path
-                    )
-
-            raise FileNotFoundError(
-                "YouTube audio downloaded, "
-                "but WAV conversion failed."
-            )
-
-    except Exception as e:
-
-        print("\n========================================")
-        print("YOUTUBE ERROR")
-        print("========================================")
-
-        print(
-            "Error type:",
-            type(e).__name__
-        )
-
-        print(
-            "Error:",
-            str(e)
-        )
-
-        print("========================================")
-
-        # ----------------------------------------------------
-        # Helpful 403 message
-        # ----------------------------------------------------
-
-        if "403" in str(e):
-
-            print(
-                "\nYouTube returned HTTP 403."
-            )
-
-            print(
-                "The selected YouTube client/format "
-                "may require a PO Token."
-            )
-
-            print(
-                "The application is using web_safari + HLS "
-                "as the first workaround."
-            )
-
-        raise
+    raise FileNotFoundError(
+        "YouTube download completed but "
+        "no usable audio file was found."
+    )
 
 
 # ============================================================
@@ -403,16 +505,9 @@ def normalize_audio(
     audio: AudioSegment
 ) -> AudioSegment:
 
-    """
-    Convert audio to:
-    - Mono
-    - 16 kHz
-    - 16-bit PCM
-
-    This dramatically reduces WAV file size.
-    """
-
-    print("\nNormalizing audio...")
+    print(
+        "\nNormalizing audio..."
+    )
 
     audio = audio.set_channels(
         CHANNELS
@@ -440,11 +535,17 @@ def normalize_audio(
 # CONVERT TO WAV
 # ============================================================
 
-def convert_to_wav(input_path: str) -> str:
+def convert_to_wav(
+    input_path: str
+) -> str:
 
-    print("\nConverting file to WAV...")
+    print(
+        "\nConverting file to WAV..."
+    )
 
-    if not os.path.exists(input_path):
+    if not os.path.exists(
+        input_path
+    ):
 
         raise FileNotFoundError(
             f"Input file not found: {input_path}"
@@ -456,13 +557,14 @@ def convert_to_wav(input_path: str) -> str:
             input_path
         )
 
-        # Normalize before creating WAV
         audio = normalize_audio(
             audio
         )
 
         output_path = (
-            os.path.splitext(input_path)[0]
+            os.path.splitext(
+                input_path
+            )[0]
             + "_normalized.wav"
         )
 
@@ -506,6 +608,7 @@ def clean_old_chunks():
     if not os.path.exists(
         DOWNLOAD_DIR
     ):
+
         return
 
     for filename in os.listdir(
@@ -527,6 +630,7 @@ def clean_old_chunks():
                 os.remove(path)
 
             except Exception:
+
                 pass
 
 
@@ -536,21 +640,21 @@ def clean_old_chunks():
 
 def chunk_audio(
     audio_path: str,
-    chunk_length_ms: int = DEFAULT_CHUNK_LENGTH_MS
+    chunk_length_ms: int =
+        DEFAULT_CHUNK_LENGTH_MS
 ) -> list:
 
-    """
-    Split normalized audio into chunks.
+    print(
+        "\n========================================"
+    )
 
-    Audio is:
-    - Mono
-    - 16 kHz
-    - 16-bit WAV
-    """
+    print(
+        "SPLITTING AUDIO"
+    )
 
-    print("\n========================================")
-    print("SPLITTING AUDIO")
-    print("========================================")
+    print(
+        "========================================"
+    )
 
     if not os.path.exists(
         audio_path
@@ -559,10 +663,6 @@ def chunk_audio(
         raise FileNotFoundError(
             f"Audio file not found: {audio_path}"
         )
-
-    # --------------------------------------------------------
-    # Read audio
-    # --------------------------------------------------------
 
     try:
 
@@ -579,10 +679,6 @@ def chunk_audio(
 
         raise
 
-    # --------------------------------------------------------
-    # Normalize
-    # --------------------------------------------------------
-
     audio = normalize_audio(
         audio
     )
@@ -591,27 +687,25 @@ def chunk_audio(
 
     print(
         "Audio duration:",
-        round(total_length / 1000, 2),
+        round(
+            total_length / 1000,
+            2
+        ),
         "seconds"
     )
 
     print(
         "Chunk duration:",
-        round(chunk_length_ms / 1000, 2),
+        round(
+            chunk_length_ms / 1000,
+            2
+        ),
         "seconds"
     )
-
-    # --------------------------------------------------------
-    # Clean old chunks
-    # --------------------------------------------------------
 
     clean_old_chunks()
 
     chunks = []
-
-    # --------------------------------------------------------
-    # Split
-    # --------------------------------------------------------
 
     for start in range(
         0,
@@ -624,39 +718,32 @@ def chunk_audio(
             total_length
         )
 
-        chunk = audio[start:end]
+        chunk = audio[
+            start:end
+        ]
 
-        chunk_number = len(chunks) + 1
+        chunk_number = (
+            len(chunks) + 1
+        )
 
         chunk_path = os.path.join(
             DOWNLOAD_DIR,
             f"chunk_{chunk_number}.wav"
         )
 
-        # ----------------------------------------------------
-        # Export
-        # ----------------------------------------------------
-
         chunk.export(
             chunk_path,
             format="wav"
         )
-
-        # ----------------------------------------------------
-        # Check size
-        # ----------------------------------------------------
 
         file_size = os.path.getsize(
             chunk_path
         )
 
         file_size_mb = (
-            file_size / (1024 * 1024)
+            file_size /
+            (1024 * 1024)
         )
-
-        # ----------------------------------------------------
-        # Safety check
-        # ----------------------------------------------------
 
         if file_size > MAX_CHUNK_SIZE:
 
@@ -665,19 +752,16 @@ def chunk_audio(
                 f"is {file_size_mb:.2f} MB."
             )
 
-            print(
-                "Chunk is larger than safety limit."
-            )
-
             os.remove(
                 chunk_path
             )
 
-            # Create smaller chunks recursively
-            smaller_chunks = chunk_audio_segment(
-                audio,
-                start,
-                end
+            smaller_chunks = (
+                chunk_audio_segment(
+                    audio,
+                    start,
+                    end
+                )
             )
 
             chunks.extend(
@@ -697,13 +781,17 @@ def chunk_audio(
             f"({file_size_mb:.2f} MB)"
         )
 
-    # --------------------------------------------------------
-    # Final
-    # --------------------------------------------------------
+    print(
+        "\n========================================"
+    )
 
-    print("\n========================================")
-    print("CHUNKING COMPLETED")
-    print("========================================")
+    print(
+        "CHUNKING COMPLETED"
+    )
+
+    print(
+        "========================================"
+    )
 
     print(
         "Total chunks:",
@@ -725,7 +813,6 @@ def chunk_audio_segment(
 
     duration = end - start
 
-    # Prevent infinite recursion
     if duration <= 1000:
 
         raise RuntimeError(
@@ -733,8 +820,8 @@ def chunk_audio_segment(
             "the OpenAI upload size limit."
         )
 
-    # Split into half
-    middle = start + (
+    middle = (
+        start +
         duration // 2
     )
 
@@ -750,10 +837,6 @@ def chunk_audio_segment(
         segment = audio[
             seg_start:seg_end
         ]
-
-        # ----------------------------------------------------
-        # Find next chunk number
-        # ----------------------------------------------------
 
         existing_chunks = [
             f
@@ -775,10 +858,6 @@ def chunk_audio_segment(
             f"chunk_{chunk_number}.wav"
         )
 
-        # ----------------------------------------------------
-        # Export
-        # ----------------------------------------------------
-
         segment.export(
             chunk_path,
             format="wav"
@@ -789,12 +868,9 @@ def chunk_audio_segment(
         )
 
         file_size_mb = (
-            file_size / (1024 * 1024)
+            file_size /
+            (1024 * 1024)
         )
-
-        # ----------------------------------------------------
-        # Still too large
-        # ----------------------------------------------------
 
         if file_size > MAX_CHUNK_SIZE:
 
@@ -830,11 +906,21 @@ def chunk_audio_segment(
 # PROCESS INPUT
 # ============================================================
 
-def process_input(source: str) -> list:
+def process_input(
+    source: str
+) -> list:
 
-    print("\n========================================")
-    print("PROCESSING INPUT")
-    print("========================================")
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "PROCESSING INPUT"
+    )
+
+    print(
+        "========================================"
+    )
 
     if not source:
 
@@ -846,14 +932,18 @@ def process_input(source: str) -> list:
     # YOUTUBE
     # ========================================================
 
-    if is_youtube_url(source):
+    if is_youtube_url(
+        source
+    ):
 
         print(
             "Input type: YouTube URL"
         )
 
-        audio_path = download_youtube_audio(
-            source
+        audio_path = (
+            download_youtube_audio(
+                source
+            )
         )
 
     # ========================================================
@@ -866,7 +956,9 @@ def process_input(source: str) -> list:
             "Input type: Uploaded/local file"
         )
 
-        if not os.path.exists(source):
+        if not os.path.exists(
+            source
+        ):
 
             raise FileNotFoundError(
                 f"File not found: {source}"
@@ -894,8 +986,16 @@ def process_input(source: str) -> list:
     # COMPLETED
     # ========================================================
 
-    print("\n========================================")
-    print("PROCESSING COMPLETED")
-    print("========================================")
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "PROCESSING COMPLETED"
+    )
+
+    print(
+        "========================================"
+    )
 
     return chunks
