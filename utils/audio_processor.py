@@ -16,13 +16,16 @@ from utils.bgutil_setup import (
 # CONFIG
 # ============================================================
 
-MAX_CHUNK_SIZE = 20 * 1024 * 1024
+# Maximum allowed chunk size
+MAX_CHUNK_SIZE = 20 * 1024 * 1024  # 20 MB
 
+# Default chunk length = 10 minutes
 DEFAULT_CHUNK_LENGTH_MS = 10 * 60 * 1000
 
+# Audio settings
 SAMPLE_RATE = 16000
 CHANNELS = 1
-SAMPLE_WIDTH = 2
+SAMPLE_WIDTH = 2  # 16-bit
 
 
 # ============================================================
@@ -62,9 +65,9 @@ def check_ffmpeg():
     ffmpeg_path = shutil.which("ffmpeg")
 
     if not ffmpeg_path:
-
         raise RuntimeError(
-            "FFmpeg not found."
+            "FFmpeg not found. "
+            "Please install FFmpeg and make sure it is in PATH."
         )
 
     print(
@@ -83,9 +86,9 @@ def check_deno():
     deno_path = shutil.which("deno")
 
     if not deno_path:
-
         raise RuntimeError(
-            "Deno not found."
+            "Deno not found. "
+            "Please install Deno and make sure it is in PATH."
         )
 
     print(
@@ -101,9 +104,7 @@ def check_deno():
 
 def check_bgutil():
 
-    if not os.path.isdir(
-        BGUTIL_SERVER_DIR
-    ):
+    if not os.path.isdir(BGUTIL_SERVER_DIR):
 
         raise RuntimeError(
             "BgUtils provider not found:\n"
@@ -124,9 +125,7 @@ def check_bgutil():
 
 def check_bgutil_script():
 
-    if not os.path.isfile(
-        BGUTIL_SCRIPT_PATH
-    ):
+    if not os.path.isfile(BGUTIL_SCRIPT_PATH):
 
         raise RuntimeError(
             "BgUtils script not found:\n"
@@ -158,18 +157,22 @@ def normalize_audio(
         input_path
     )
 
+    # Mono
     audio = audio.set_channels(
         CHANNELS
     )
 
+    # 16 kHz
     audio = audio.set_frame_rate(
         SAMPLE_RATE
     )
 
+    # 16-bit
     audio = audio.set_sample_width(
         SAMPLE_WIDTH
     )
 
+    # Export WAV
     audio.export(
         output_path,
         format="wav"
@@ -180,6 +183,11 @@ def normalize_audio(
         f"{CHANNELS} channel, "
         f"{SAMPLE_RATE} Hz, "
         f"{SAMPLE_WIDTH * 8}-bit"
+    )
+
+    print(
+        f"Normalized audio created: "
+        f"{output_path}"
     )
 
     return output_path
@@ -201,12 +209,6 @@ def build_youtube_options(
         f"{bgutil_server_url}"
     )
 
-    # ========================================================
-    # IMPORTANT
-    #
-    # yt-dlp extractor_args must use LIST values.
-    # ========================================================
-
     extractor_args = {
 
         "youtube": [
@@ -225,13 +227,16 @@ def build_youtube_options(
 
     options = {
 
+        # Best available audio
         "format": "bestaudio/best",
 
+        # Output file
         "outtmpl": os.path.join(
             output_dir,
             "%(id)s.%(ext)s"
         ),
 
+        # Don't download playlist
         "noplaylist": True,
 
         # ----------------------------------------------------
@@ -255,7 +260,7 @@ def build_youtube_options(
         },
 
         # ----------------------------------------------------
-        # PO TOKEN PROVIDERS
+        # PO Token providers
         # ----------------------------------------------------
 
         "extractor_args": extractor_args,
@@ -265,9 +270,7 @@ def build_youtube_options(
         # ----------------------------------------------------
 
         "retries": 3,
-
         "fragment_retries": 3,
-
         "extractor_retries": 3,
 
         # ----------------------------------------------------
@@ -275,14 +278,8 @@ def build_youtube_options(
         # ----------------------------------------------------
 
         "quiet": False,
-
         "no_warnings": False,
 
-        # ----------------------------------------------------
-        # Playlist
-        # ----------------------------------------------------
-
-        "noplaylist": True,
     }
 
     return options
@@ -336,8 +333,12 @@ def download_youtube_audio(
     )
 
     # --------------------------------------------------------
-    # Start BgUtils ONLY ONCE
+    # Start BgUtils
     # --------------------------------------------------------
+
+    print(
+        "\nStarting/checking BgUtils server..."
+    )
 
     start_bgutil_server()
 
@@ -416,12 +417,10 @@ def download_youtube_audio(
         raise
 
     # --------------------------------------------------------
-    # Find file
+    # Find downloaded file
     # --------------------------------------------------------
 
-    if not os.path.exists(
-        downloaded_file
-    ):
+    if not os.path.exists(downloaded_file):
 
         files = os.listdir(
             temp_dir
@@ -449,7 +448,7 @@ def download_youtube_audio(
     )
 
     # --------------------------------------------------------
-    # Normalize
+    # Normalize audio
     # --------------------------------------------------------
 
     wav_path = os.path.join(
@@ -463,7 +462,7 @@ def download_youtube_audio(
     )
 
     # --------------------------------------------------------
-    # Remove original
+    # Remove original downloaded file
     # --------------------------------------------------------
 
     if (
@@ -477,8 +476,15 @@ def download_youtube_audio(
                 downloaded_file
             )
 
-        except Exception:
-            pass
+            print(
+                "Original downloaded file removed."
+            )
+
+        except Exception as e:
+
+            print(
+                f"Could not remove original file: {e}"
+            )
 
     print(
         f"Normalized audio: "
@@ -501,9 +507,7 @@ def process_local_file(
         f"{file_path}"
     )
 
-    if not os.path.exists(
-        file_path
-    ):
+    if not os.path.exists(file_path):
 
         raise FileNotFoundError(
             f"File not found: {file_path}"
@@ -511,6 +515,11 @@ def process_local_file(
 
     temp_dir = tempfile.mkdtemp(
         prefix="local_audio_"
+    )
+
+    print(
+        f"Temporary directory: "
+        f"{temp_dir}"
     )
 
     wav_path = os.path.join(
@@ -521,6 +530,11 @@ def process_local_file(
     normalize_audio(
         file_path,
         wav_path
+    )
+
+    print(
+        f"Local file processing completed: "
+        f"{wav_path}"
     )
 
     return wav_path
@@ -536,8 +550,30 @@ def split_audio(
 ):
 
     print(
-        "\nSplitting audio..."
+        "\n"
+        + "=" * 60
     )
+
+    print(
+        "Splitting audio"
+    )
+
+    print(
+        "=" * 60
+    )
+
+    print(
+        f"Audio file: {audio_path}"
+    )
+
+    print(
+        f"Chunk length: "
+        f"{chunk_length_ms / 60000:.2f} minutes"
+    )
+
+    # --------------------------------------------------------
+    # Load audio
+    # --------------------------------------------------------
 
     audio = AudioSegment.from_wav(
         audio_path
@@ -550,14 +586,32 @@ def split_audio(
         f"{duration_ms / 1000:.2f} seconds"
     )
 
+    print(
+        f"Audio duration: "
+        f"{duration_ms / 60000:.2f} minutes"
+    )
+
+    # --------------------------------------------------------
+    # Create chunk directory
+    # --------------------------------------------------------
+
     chunk_dir = tempfile.mkdtemp(
         prefix="audio_chunks_"
+    )
+
+    print(
+        f"Chunk directory: "
+        f"{chunk_dir}"
     )
 
     chunks = []
 
     start = 0
     index = 0
+
+    # --------------------------------------------------------
+    # Create chunks
+    # --------------------------------------------------------
 
     while start < duration_ms:
 
@@ -585,14 +639,18 @@ def split_audio(
         )
 
         # ----------------------------------------------------
-        # Too large
+        # Check chunk size
         # ----------------------------------------------------
 
         if file_size > MAX_CHUNK_SIZE:
 
             print(
-                f"Chunk {index + 1} too large: "
+                f"\nChunk {index + 1} too large: "
                 f"{file_size / (1024 * 1024):.2f} MB"
+            )
+
+            print(
+                "Reducing chunk length and retrying..."
             )
 
             shutil.rmtree(
@@ -608,6 +666,10 @@ def split_audio(
                 ),
             )
 
+        # ----------------------------------------------------
+        # Add chunk
+        # ----------------------------------------------------
+
         chunks.append(
             chunk_path
         )
@@ -620,15 +682,28 @@ def split_audio(
         start = end
         index += 1
 
+    # --------------------------------------------------------
+    # Final result
+    # --------------------------------------------------------
+
+    print(
+        "\n"
+        + "=" * 60
+    )
+
     print(
         f"Total chunks: {len(chunks)}"
+    )
+
+    print(
+        "=" * 60
     )
 
     return chunks
 
 
 # ============================================================
-# MAIN
+# MAIN PROCESS INPUT
 # ============================================================
 
 def process_input(
@@ -654,10 +729,28 @@ def process_input(
     )
 
     # --------------------------------------------------------
+    # Validate source
+    # --------------------------------------------------------
+
+    if not source:
+
+        raise ValueError(
+            "Source cannot be empty."
+        )
+
+    # --------------------------------------------------------
     # YouTube
     # --------------------------------------------------------
 
     if input_type == "youtube":
+
+        print(
+            "\nSource: YouTube"
+        )
+
+        print(
+            f"URL: {source}"
+        )
 
         audio_path = (
             download_youtube_audio(
@@ -671,11 +764,19 @@ def process_input(
 
     elif input_type == "file":
 
+        print(
+            "\nSource: Local file"
+        )
+
         audio_path = (
             process_local_file(
                 source
             )
         )
+
+    # --------------------------------------------------------
+    # Invalid input type
+    # --------------------------------------------------------
 
     else:
 
@@ -685,15 +786,58 @@ def process_input(
         )
 
     # --------------------------------------------------------
-    # Split
+    # Check audio path
+    # --------------------------------------------------------
+
+    if not audio_path:
+
+        raise RuntimeError(
+            "Audio processing did not return an audio path."
+        )
+
+    if not os.path.exists(audio_path):
+
+        raise RuntimeError(
+            f"Audio file does not exist: {audio_path}"
+        )
+
+    print(
+        f"\nAudio ready for splitting:"
+    )
+
+    print(
+        audio_path
+    )
+
+    # --------------------------------------------------------
+    # Split audio
     # --------------------------------------------------------
 
     chunks = split_audio(
         audio_path
     )
 
+    # --------------------------------------------------------
+    # Validate chunks
+    # --------------------------------------------------------
+
+    if not chunks:
+
+        raise RuntimeError(
+            "No audio chunks were generated."
+        )
+
     print(
         "\nAudio processing completed."
+    )
+
+    print(
+        f"Returning {len(chunks)} chunks to app.py..."
+    )
+
+    # IMPORTANT DEBUG MESSAGE
+    print(
+        "DEBUG: process_input() is returning now."
     )
 
     return chunks
