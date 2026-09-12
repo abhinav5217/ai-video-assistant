@@ -143,22 +143,27 @@ def transcribe_all(
     language: str = None,
     translate: bool = False
 ) -> str:
-    """
-    Saare audio chunks ko transcribe karta hai
-    aur ek complete transcript return karta hai.
-    """
 
     full_transcript = []
 
     if not chunks:
         return ""
 
+    total_start = time.time()
+
     for i, chunk in enumerate(chunks):
 
         print(
-            f"\nTranscribing chunk "
-            f"{i + 1}/{len(chunks)}"
+            f"\n=============================="
         )
+        print(
+            f"Transcribing chunk {i + 1}/{len(chunks)}"
+        )
+        print(
+            f"File: {chunk}"
+        )
+
+        start_time = time.time()
 
         text = transcribe_chunk(
             chunk_path=chunk,
@@ -166,12 +171,25 @@ def transcribe_all(
             translate=translate
         )
 
+        elapsed = time.time() - start_time
+
+        print(
+            f"Chunk {i + 1} completed in "
+            f"{elapsed:.2f} seconds"
+        )
+
         if text:
+            full_transcript.append(text.strip())
 
-            full_transcript.append(
-                text.strip()
-            )
+    total_time = time.time() - total_start
 
-    print("\nTranscription completed")
+    print(
+        f"\nTranscription completed in "
+        f"{total_time / 60:.2f} minutes"
+    )
+
+    print(
+        f"Total chunks processed: {len(chunks)}"
+    )
 
     return " ".join(full_transcript)
