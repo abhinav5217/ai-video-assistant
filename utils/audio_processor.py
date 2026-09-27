@@ -5,11 +5,6 @@ import tempfile
 import yt_dlp
 from pydub import AudioSegment
 
-from utils.bgutil_setup import (
-    ensure_bgutil_dependencies,
-    start_bgutil_server,
-    get_bgutil_server_url,
-)
 
 
 # ============================================================
@@ -39,22 +34,6 @@ PROJECT_ROOT = os.path.abspath(
     )
 )
 
-BGUTIL_DIR = os.path.join(
-    PROJECT_ROOT,
-    "bgutil-ytdlp-pot-provider"
-)
-
-BGUTIL_SERVER_DIR = os.path.join(
-    BGUTIL_DIR,
-    "server"
-)
-
-BGUTIL_SCRIPT_PATH = os.path.join(
-    BGUTIL_SERVER_DIR,
-    "src",
-    "generate_once.ts"
-)
-
 
 # ============================================================
 # FFMPEG
@@ -75,69 +54,6 @@ def check_ffmpeg():
     )
 
     return ffmpeg_path
-
-
-# ============================================================
-# DENO
-# ============================================================
-
-def check_deno():
-
-    deno_path = shutil.which("deno")
-
-    if not deno_path:
-        raise RuntimeError(
-            "Deno not found. "
-            "Please install Deno and make sure it is in PATH."
-        )
-
-    print(
-        f"Deno: {deno_path}"
-    )
-
-    return deno_path
-
-
-# ============================================================
-# BGUTIL
-# ============================================================
-
-def check_bgutil():
-
-    if not os.path.isdir(BGUTIL_SERVER_DIR):
-
-        raise RuntimeError(
-            "BgUtils provider not found:\n"
-            f"{BGUTIL_SERVER_DIR}"
-        )
-
-    print(
-        f"BgUtils provider source found: "
-        f"{BGUTIL_SERVER_DIR}"
-    )
-
-    return BGUTIL_SERVER_DIR
-
-
-# ============================================================
-# BGUTIL SCRIPT
-# ============================================================
-
-def check_bgutil_script():
-
-    if not os.path.isfile(BGUTIL_SCRIPT_PATH):
-
-        raise RuntimeError(
-            "BgUtils script not found:\n"
-            f"{BGUTIL_SCRIPT_PATH}"
-        )
-
-    print(
-        f"BgUtils script found: "
-        f"{BGUTIL_SCRIPT_PATH}"
-    )
-
-    return BGUTIL_SCRIPT_PATH
 
 
 # ============================================================
@@ -199,90 +115,23 @@ def normalize_audio(
 
 def build_youtube_options(
     output_dir: str,
-    bgutil_server_url: str,
 ):
+    """Build a BgUtils-free yt-dlp configuration.
 
-    deno_path = check_deno()
-
-    print(
-        f"BgUtils URL passed to yt-dlp: "
-        f"{bgutil_server_url}"
-    )
-
-    extractor_args = {
-
-        "youtube": [
-            "player_client=mweb,web_safari,tv,web_embedded"
-        ],
-
-        "youtubepot-bgutilhttp": [
-            f"base_url={bgutil_server_url}"
-        ],
-
-        "youtubepot-bgutilscript": [
-            f"server_home={BGUTIL_SERVER_DIR}",
-            f"script_path={BGUTIL_SCRIPT_PATH}",
-        ],
-    }
-
-    options = {
-
-        # Best available audio
+    yt-dlp chooses its currently supported YouTube clients automatically.
+    Some videos may still be unavailable when YouTube requires a PO token;
+    that is a YouTube/yt-dlp limitation rather than an app dependency.
+    """
+    return {
         "format": "bestaudio/best",
-
-        # Output file
-        "outtmpl": os.path.join(
-            output_dir,
-            "%(id)s.%(ext)s"
-        ),
-
-        # Don't download playlist
+        "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
         "noplaylist": True,
-
-        # ----------------------------------------------------
-        # Deno
-        # ----------------------------------------------------
-
-        "js_runtimes": {
-            "deno": {
-                "paths": [
-                    deno_path
-                ]
-            }
-        },
-
-        # ----------------------------------------------------
-        # Remote EJS
-        # ----------------------------------------------------
-
-        "remote_components": {
-            "ejs:npm"
-        },
-
-        # ----------------------------------------------------
-        # PO Token providers
-        # ----------------------------------------------------
-
-        "extractor_args": extractor_args,
-
-        # ----------------------------------------------------
-        # Retry
-        # ----------------------------------------------------
-
         "retries": 3,
         "fragment_retries": 3,
         "extractor_retries": 3,
-
-        # ----------------------------------------------------
-        # Logs
-        # ----------------------------------------------------
-
         "quiet": False,
         "no_warnings": False,
-
     }
-
-    return options
 
 
 # ============================================================
@@ -312,45 +161,6 @@ def download_youtube_audio(
 
     check_ffmpeg()
 
-    check_deno()
-
-    check_bgutil()
-
-    check_bgutil_script()
-
-    # --------------------------------------------------------
-    # BgUtils dependencies
-    # --------------------------------------------------------
-
-    print(
-        "\nChecking BgUtils dependencies..."
-    )
-
-    ensure_bgutil_dependencies()
-
-    print(
-        "BgUtils dependencies are ready."
-    )
-
-    # --------------------------------------------------------
-    # Start BgUtils
-    # --------------------------------------------------------
-
-    print(
-        "\nStarting/checking BgUtils server..."
-    )
-
-    start_bgutil_server()
-
-    bgutil_server_url = (
-        get_bgutil_server_url()
-    )
-
-    print(
-        f"BgUtils server: "
-        f"{bgutil_server_url}"
-    )
-
     # --------------------------------------------------------
     # Temporary directory
     # --------------------------------------------------------
@@ -370,7 +180,6 @@ def download_youtube_audio(
 
     ydl_opts = build_youtube_options(
         output_dir=temp_dir,
-        bgutil_server_url=bgutil_server_url,
     )
 
     # --------------------------------------------------------
