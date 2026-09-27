@@ -131,6 +131,15 @@ def build_youtube_options(
         "extractor_retries": 3,
         "quiet": False,
         "no_warnings": False,
+        # Prefer YouTube clients that currently do not require a PO token.
+        # Skip the initial webpage request, which is commonly where
+        # datacenter IPs receive the "sign in to confirm you're not a bot" page.
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web_embedded", "tv"],
+                "player_skip": ["webpage"],
+            }
+        },
     }
 
 
